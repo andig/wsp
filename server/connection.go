@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,9 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
-
-	"github.com/root-gg/wsp"
+	"github.com/andig/wsp"
+	"nhooyr.io/websocket"
 )
 
 // ConnectionStatus is an enumeration type which represents the status of WebSocket connection.
@@ -89,7 +89,7 @@ func (connection *Connection) read() {
 		//  - always be reading on the socket to be able to process control messages ( ping / pong / close )
 
 		// We will block here until a message is received or the ws is closed
-		_, reader, err := connection.ws.NextReader()
+		_, reader, err := connection.ws.Reader(context.Background())
 		if err != nil {
 			break
 		}
@@ -119,7 +119,7 @@ func (connection *Connection) read() {
 }
 
 // Proxy a HTTP request through the Proxy over the websocket connection
-func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Request) (err error) {
+func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Request) error {
 	log.Printf("proxy request to %s", connection.pool.id)
 
 	// [1]: Serialize HTTP request
@@ -137,12 +137,12 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 
 	// [2]: Send the HTTP request to the peer
 	// Send the serialized HTTP request to the the peer
-	if err := connection.ws.WriteMessage(websocket.TextMessage, jsonReq); err != nil {
+	if err := connection.ws.Write(context.Background(), websocket.MessageText, jsonReq); err != nil {
 		return fmt.Errorf("unable to write request : %w", err)
 	}
 
 	// Pipe the HTTP request body to the the peer
-	bodyWriter, err := connection.ws.NextWriter(websocket.BinaryMessage)
+	bodyWriter, err := connection.ws.Writer(context.Background(), websocket.MessageBinary)
 	if err != nil {
 		return fmt.Errorf("unable to get request body writer : %w", err)
 	}
@@ -218,7 +218,7 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 
 	connection.Release()
 
-	return
+	return nil
 }
 
 // Take notifies that this connection is going to be used
@@ -276,5 +276,5 @@ func (connection *Connection) close() {
 	close(connection.nextResponse)
 
 	// Close the underlying TCP connection
-	connection.ws.Close()
+	connection.ws.Close(websocket.StatusNormalClosure, "")
 }

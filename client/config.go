@@ -3,8 +3,8 @@ package client
 import (
 	"os"
 
-	uuid "github.com/nu7hatch/gouuid"
-	"gopkg.in/yaml.v2"
+	"github.com/google/uuid"
+	"gopkg.in/yaml.v3"
 )
 
 // Config configures an Proxy
@@ -20,11 +20,7 @@ type Config struct {
 func NewConfig() (config *Config) {
 	config = new(Config)
 
-	id, err := uuid.NewV4()
-	if err != nil {
-		panic(err)
-	}
-	config.ID = id.String()
+	config.ID = uuid.NewString()
 
 	config.Targets = []string{"ws://127.0.0.1:8080/register"}
 	config.PoolIdleSize = 10

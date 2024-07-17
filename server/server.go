@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"log"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -12,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
-	"github.com/root-gg/wsp"
+	"github.com/andig/wsp"
+	"nhooyr.io/websocket"
 )
 
 // Server is a Reverse HTTP Proxy over WebSocket
@@ -21,8 +20,6 @@ import (
 // those will be pooled to transfer HTTP Request and response
 type Server struct {
 	Config *Config
-
-	upgrader websocket.Upgrader
 
 	// In pools, keep connections with WebSocket peers.
 	pools []*Pool
@@ -61,11 +58,8 @@ func NewConnectionRequest(timeout time.Duration) (cr *ConnectionRequest) {
 
 // NewServer return a new Server instance
 func NewServer(config *Config) (server *Server) {
-	rand.Seed(time.Now().Unix())
-
 	server = new(Server)
 	server.Config = config
-	server.upgrader = websocket.Upgrader{}
 
 	server.done = make(chan struct{})
 	server.dispatcher = make(chan *ConnectionRequest)
@@ -174,10 +168,12 @@ func (s *Server) dispatchConnections() {
 			for i, ch := range s.pools {
 				cases[i] = reflect.SelectCase{
 					Dir:  reflect.SelectRecv,
-					Chan: reflect.ValueOf(ch.idle)}
+					Chan: reflect.ValueOf(ch.idle),
+				}
 			}
 			cases[len(cases)-1] = reflect.SelectCase{
-				Dir: reflect.SelectDefault}
+				Dir: reflect.SelectDefault,
+			}
 			s.lock.RUnlock()
 
 			_, value, ok := reflect.Select(cases)
@@ -254,14 +250,17 @@ func (s *Server) Request(w http.ResponseWriter, r *http.Request) {
 
 // Request receives the WebSocket upgrade handshake request from wsp_client.
 func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
-	// 1. Upgrade a received HTTP request to a WebSocket connection
-	secretKey := r.Header.Get("X-SECRET-KEY")
-	if secretKey != s.Config.SecretKey {
-		wsp.ProxyErrorf(w, "Invalid X-SECRET-KEY")
-		return
+	acceptOptions := &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
 	}
 
-	ws, err := s.upgrader.Upgrade(w, r, nil)
+	// https://github.com/nhooyr/websocket/issues/218
+	ua := strings.ToLower(r.Header.Get("User-Agent"))
+	if strings.Contains(ua, "safari") && !strings.Contains(ua, "chrome") && !strings.Contains(ua, "android") {
+		acceptOptions.CompressionMode = websocket.CompressionDisabled
+	}
+
+	ws, err := websocket.Accept(w, r, acceptOptions)
 	if err != nil {
 		wsp.ProxyErrorf(w, "HTTP upgrade error : %v", err)
 		return
@@ -269,10 +268,10 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Wait a greeting message from the peer and parse it
 	// The first message should contains the remote Proxy name and size
-	_, greeting, err := ws.ReadMessage()
+	_, greeting, err := ws.Read(context.Background())
 	if err != nil {
 		wsp.ProxyErrorf(w, "Unable to read greeting message : %s", err)
-		ws.Close()
+		ws.CloseNow()
 		return
 	}
 
@@ -282,7 +281,7 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 	size, err := strconv.Atoi(split[1])
 	if err != nil {
 		wsp.ProxyErrorf(w, "Unable to parse greeting message : %s", err)
-		ws.Close()
+		ws.CloseNow()
 		return
 	}
 

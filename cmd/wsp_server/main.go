@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/root-gg/wsp/server"
+	"github.com/andig/wsp/server"
 )
 
 func main() {

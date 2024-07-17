@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"nhooyr.io/websocket"
 )
 
 // Pool handles all connections from the peer.

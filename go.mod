@@ -1,12 +1,11 @@
 module github.com/andig/wsp
 
-go 1.21
+go 1.22
 
 require (
-	github.com/gorilla/websocket v1.4.2
-	github.com/nu7hatch/gouuid v0.0.0-20131221200532-179d4d0c4d8d
-	github.com/root-gg/utils v0.0.0-20151025161626-38f45ede2ce2
-	gopkg.in/yaml.v2 v2.0.0-20160928153709-a5b47d31c556
+	github.com/google/uuid v1.6.0
+	gopkg.in/yaml.v3 v3.0.1
+	nhooyr.io/websocket v1.8.11
 )
 
 require gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
