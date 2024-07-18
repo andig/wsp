@@ -41,7 +41,7 @@ type Server struct {
 	// and "dispatcher" thread reads this channel.
 	dispatcher chan *ConnectionRequest
 
-	server *http.Server
+	// server *http.Server
 }
 
 // ConnectionRequest is used to request a proxy connection from the dispatcher
@@ -80,22 +80,36 @@ func (s *Server) Start() {
 		}
 	}()
 
-	r := http.NewServeMux()
-	// TODO: I want to detach the handler function from the Server struct,
-	// but it is tightly coupled to the internal state of the Server.
-	r.HandleFunc("/register", s.Register)
-	r.HandleFunc("/request", s.Request)
-	r.HandleFunc("/status", s.status)
+	// r := http.NewServeMux()
+	// // TODO: I want to detach the handler function from the Server struct,
+	// // but it is tightly coupled to the internal state of the Server.
+	// r.HandleFunc("/register", s.Register)
+	// r.HandleFunc("/request", s.Request)
+	// r.HandleFunc("/status", s.status)
 
 	// Dispatch connection from available pools to clients requests
 	// in a separate thread from the server thread.
 	go s.dispatchConnections()
 
-	s.server = &http.Server{
-		Addr:    s.Config.GetAddr(),
-		Handler: r,
+	// s.server = &http.Server{
+	// 	Addr:    s.Config.GetAddr(),
+	// 	Handler: r,
+	// }
+	// go func() { log.Fatal(s.server.ListenAndServe()) }()
+}
+
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	segments := strings.Split(r.URL.Path, "/")
+	switch segments[len(segments)-1] {
+	case "register":
+		s.Register(w, r)
+	case "request":
+		s.Request(w, r)
+	case "status":
+		s.status(w, r)
+	default:
+		http.NotFound(w, r)
 	}
-	go func() { log.Fatal(s.server.ListenAndServe()) }()
 }
 
 // clean removes empty Pools which has no connection.
@@ -305,7 +319,7 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 	pool.Register(ws)
 }
 
-func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("ok"))
 }
 
