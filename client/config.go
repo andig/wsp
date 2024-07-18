@@ -17,16 +17,13 @@ type Config struct {
 }
 
 // NewConfig creates a new ProxyConfig
-func NewConfig() (config *Config) {
-	config = new(Config)
-
-	config.ID = uuid.NewString()
-
-	config.Targets = []string{"ws://127.0.0.1:8080/register"}
-	config.PoolIdleSize = 10
-	config.PoolMaxSize = 100
-
-	return
+func NewConfig() *Config {
+	return &Config{
+		ID:           uuid.NewString(),
+		Targets:      []string{"ws://127.0.0.1:8080/register"},
+		PoolIdleSize: 10,
+		PoolMaxSize:  100,
+	}
 }
 
 // LoadConfiguration loads configuration from a YAML file
