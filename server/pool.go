@@ -72,7 +72,7 @@ func (pool *Pool) Clean() {
 			if idle > pool.size {
 				// We have enough idle connections in the pool.
 				// Terminate the connection if it is idle since more that IdleTimeout
-				if int(time.Now().Sub(connection.idleSince).Seconds())*1000 > pool.server.Config.IdleTimeout {
+				if time.Since(connection.idleSince) > pool.server.Config.IdleTimeout {
 					connection.close()
 				}
 			}
@@ -117,16 +117,17 @@ type PoolSize struct {
 
 // Size return the number of connection in each state in the pool
 func (pool *Pool) Size() (ps *PoolSize) {
-	pool.lock.Lock()
-	defer pool.lock.Unlock()
+	pool.lock.RLock()
+	defer pool.lock.RUnlock()
 
 	ps = new(PoolSize)
 	for _, connection := range pool.connections {
-		if connection.status == Idle {
+		switch connection.status {
+		case Idle:
 			ps.Idle++
-		} else if connection.status == Busy {
+		case Busy:
 			ps.Busy++
-		} else if connection.status == Closed {
+		case Closed:
 			ps.Closed++
 		}
 	}

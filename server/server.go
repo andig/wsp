@@ -74,7 +74,7 @@ func (s *Server) Start() {
 			select {
 			case <-s.done:
 				break L
-			case <-time.After(5 * time.Second):
+			case <-time.After(30 * time.Second):
 				s.clean()
 			}
 		}
@@ -144,7 +144,7 @@ func (s *Server) dispatchConnections() {
 
 		// A timeout is set for each dispatch request.
 		ctx := context.Background()
-		ctx, cancel := context.WithTimeout(ctx, s.Config.GetTimeout())
+		ctx, cancel := context.WithTimeout(ctx, s.Config.Timeout)
 		defer cancel()
 
 	L:
@@ -216,7 +216,7 @@ func (s *Server) Request(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// [2]: Take an WebSocket connection available from pools for relaying received requests.
-	request := NewConnectionRequest(s.Config.GetTimeout())
+	request := NewConnectionRequest(s.Config.Timeout)
 	// "Dispatcher" is running in a separate thread from the server by `go s.dispatchConnections()`.
 	// It waits to receive requests to dispatch connection from available pools to clients requests.
 	// https://github.com/hgsgtk/wsp/blob/ea4902a8e11f820268e52a6245092728efeffd7f/server/server.go#L93
@@ -254,17 +254,12 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 		InsecureSkipVerify: true,
 	}
 
-	// https://github.com/nhooyr/websocket/issues/218
-	ua := strings.ToLower(r.Header.Get("User-Agent"))
-	if strings.Contains(ua, "safari") && !strings.Contains(ua, "chrome") && !strings.Contains(ua, "android") {
-		acceptOptions.CompressionMode = websocket.CompressionDisabled
-	}
-
 	ws, err := websocket.Accept(w, r, acceptOptions)
 	if err != nil {
 		wsp.ProxyErrorf(w, "HTTP upgrade error : %v", err)
 		return
 	}
+	ws.SetReadLimit(-1)
 
 	// 2. Wait a greeting message from the peer and parse it
 	// The first message should contains the remote Proxy name and size

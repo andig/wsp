@@ -12,19 +12,14 @@ import (
 type Config struct {
 	Host        string
 	Port        int
-	Timeout     int
-	IdleTimeout int
+	Timeout     time.Duration
+	IdleTimeout time.Duration
 	SecretKey   string
 }
 
 // GetAddr returns the address to specify a HTTP server address
 func (c Config) GetAddr() string {
 	return c.Host + ":" + strconv.Itoa(c.Port)
-}
-
-// GetTimeout returns the time.Duration converted to millisecond
-func (c Config) GetTimeout() time.Duration {
-	return time.Duration(c.Timeout) * time.Millisecond
 }
 
 // NewConfig creates a new ProxyConfig
