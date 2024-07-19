@@ -40,8 +40,6 @@ type Server struct {
 	// "server" thread sends the value to this channel when accepting requests in the endpoint /requests,
 	// and "dispatcher" thread reads this channel.
 	dispatcher chan *ConnectionRequest
-
-	// server *http.Server
 }
 
 // ConnectionRequest is used to request a proxy connection from the dispatcher
@@ -57,13 +55,13 @@ func NewConnectionRequest(timeout time.Duration) (cr *ConnectionRequest) {
 }
 
 // NewServer return a new Server instance
-func NewServer(config *Config) (server *Server) {
-	server = new(Server)
-	server.Config = config
-
-	server.done = make(chan struct{})
-	server.dispatcher = make(chan *ConnectionRequest)
-	return
+func NewServer(config *Config) *Server {
+	server := &Server{
+		Config:     config,
+		done:       make(chan struct{}),
+		dispatcher: make(chan *ConnectionRequest),
+	}
+	return server
 }
 
 // Start Server HTTP server
@@ -80,22 +78,9 @@ func (s *Server) Start() {
 		}
 	}()
 
-	// r := http.NewServeMux()
-	// // TODO: I want to detach the handler function from the Server struct,
-	// // but it is tightly coupled to the internal state of the Server.
-	// r.HandleFunc("/register", s.Register)
-	// r.HandleFunc("/request", s.Request)
-	// r.HandleFunc("/status", s.status)
-
 	// Dispatch connection from available pools to clients requests
 	// in a separate thread from the server thread.
 	go s.dispatchConnections()
-
-	// s.server = &http.Server{
-	// 	Addr:    s.Config.GetAddr(),
-	// 	Handler: r,
-	// }
-	// go func() { log.Fatal(s.server.ListenAndServe()) }()
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

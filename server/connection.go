@@ -51,11 +51,12 @@ type Connection struct {
 // NewConnection returns a new Connection.
 func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
 	// Initialize a new Connection
-	c := new(Connection)
-	c.pool = pool
-	c.ws = ws
-	c.nextResponse = make(chan chan io.Reader)
-	c.status = Idle
+	c := &Connection{
+		pool:         pool,
+		ws:           ws,
+		nextResponse: make(chan chan io.Reader),
+		status:       Idle,
+	}
 
 	// Mark that this connection is ready to use for relay
 	c.Release()
@@ -70,13 +71,19 @@ func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
 func (connection *Connection) read() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("Websocket crash recovered : %s", r)
+			log.Printf("Websocket crash recovered: %s", r)
 		}
 		connection.Close()
 	}()
 
+	syncedStatus := func() ConnectionStatus {
+		connection.lock.Lock()
+		defer connection.lock.Unlock()
+		return connection.status
+	}
+
 	for {
-		if connection.status == Closed {
+		if syncedStatus() == Closed {
 			break
 		}
 
@@ -94,7 +101,7 @@ func (connection *Connection) read() {
 			break
 		}
 
-		if connection.status != Busy {
+		if syncedStatus() != Busy {
 			// We received a wild unexpected message
 			break
 		}
