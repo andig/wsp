@@ -140,8 +140,7 @@ func (s *Server) dispatchConnections() {
 		}
 
 		// A timeout is set for each dispatch request.
-		ctx := context.Background()
-		ctx, cancel := context.WithTimeout(ctx, s.Config.Timeout)
+		ctx, cancel := context.WithTimeout(context.Background(), s.Config.Timeout)
 		defer cancel()
 
 	L:
@@ -205,7 +204,7 @@ func (s *Server) Request(w http.ResponseWriter, r *http.Request) {
 	}
 	r.URL = URL
 
-	log.Printf("[%s] %s", r.Method, r.URL.String())
+	log.Printf("%s %s", r.Method, r.URL.String())
 
 	if len(s.pools) == 0 {
 		wsp.ProxyErrorf(w, "No proxy available")
