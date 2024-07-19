@@ -71,7 +71,7 @@ func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
 func (connection *Connection) read() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("Websocket crash recovered: %s", r)
+			log.Printf("socket read recovered: %s", r)
 		}
 		connection.Close()
 	}()
@@ -93,7 +93,7 @@ func (connection *Connection) read() {
 		//  - no concurrent calls to ws.NextReader() / ws.ReadMessage()
 		//  - only one reader exists at a time
 		//  - wait for reader to be consumed before requesting the next one
-		//  - always be reading on the socket to be able to process control messages ( ping / pong / close )
+		//  - always be reading on the socket to be able to process control messages (ping / pong / close)
 
 		// We will block here until a message is received or the ws is closed
 		_, reader, err := connection.ws.Reader(context.Background())
@@ -132,7 +132,7 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 	// [1]: Serialize HTTP request
 	jsonReq, err := json.Marshal(wsp.SerializeHTTPRequest(r))
 	if err != nil {
-		return fmt.Errorf("unable to serialize request : %w", err)
+		return fmt.Errorf("unable to serialize request: %w", err)
 	}
 	// i.e.
 	// {
@@ -145,23 +145,23 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 	// [2]: Send the HTTP request to the peer
 	// Send the serialized HTTP request to the the peer
 	if err := connection.ws.Write(context.Background(), websocket.MessageText, jsonReq); err != nil {
-		return fmt.Errorf("unable to write request : %w", err)
+		return fmt.Errorf("unable to write request: %w", err)
 	}
 
 	// Pipe the HTTP request body to the the peer
 	bodyWriter, err := connection.ws.Writer(context.Background(), websocket.MessageBinary)
 	if err != nil {
-		return fmt.Errorf("unable to get request body writer : %w", err)
+		return fmt.Errorf("unable to get request body writer: %w", err)
 	}
 	if _, err := io.Copy(bodyWriter, r.Body); err != nil {
-		return fmt.Errorf("unable to pipe request body : %w", err)
+		return fmt.Errorf("unable to pipe request body: %w", err)
 	}
 	if err := bodyWriter.Close(); err != nil {
-		return fmt.Errorf("unable to pipe request body (close) : %w", err)
+		return fmt.Errorf("unable to pipe request body (close): %w", err)
 	}
 
 	// [3]: Wait the HTTP response is ready
-	responseChannel := make(chan (io.Reader))
+	responseChannel := make(chan io.Reader)
 	connection.nextResponse <- responseChannel
 	responseReader, ok := <-responseChannel
 	if responseReader == nil {
@@ -170,7 +170,7 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 			// See the Receiver operator in https://go.dev/ref/spec for more information.
 			close(responseChannel)
 		}
-		return fmt.Errorf("unable to get http response reader : %w", err)
+		return fmt.Errorf("unable to get http response reader: %w", err)
 	}
 
 	// [4]: Read the HTTP response from the peer
@@ -178,16 +178,16 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 	jsonResponse, err := io.ReadAll(responseReader)
 	if err != nil {
 		close(responseChannel)
-		return fmt.Errorf("unable to read http response : %w", err)
+		return fmt.Errorf("unable to read http response: %w", err)
 	}
 
 	// Notify the read() goroutine that we are done reading the response
 	close(responseChannel)
 
 	// Deserialize the HTTP Response
-	httpResponse := new(wsp.HTTPResponse)
-	if err := json.Unmarshal(jsonResponse, httpResponse); err != nil {
-		return fmt.Errorf("unable to unserialize http response : %w", err)
+	var httpResponse wsp.HTTPResponse
+	if err := json.Unmarshal(jsonResponse, &httpResponse); err != nil {
+		return fmt.Errorf("unable to unserialize http response: %w", err)
 	}
 
 	// Write response headers back to the client
@@ -202,7 +202,7 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 	// Get the HTTP Response body from the the peer
 	// To do so send a new channel to the read() goroutine
 	// to get the next message reader
-	responseBodyChannel := make(chan (io.Reader))
+	responseBodyChannel := make(chan io.Reader)
 	connection.nextResponse <- responseBodyChannel
 	responseBodyReader, ok := <-responseBodyChannel
 	if responseBodyReader == nil {
@@ -210,14 +210,14 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 			// If more is false the channel is already closed
 			close(responseChannel)
 		}
-		return fmt.Errorf("unable to get http response body reader : %w", err)
+		return fmt.Errorf("unable to get http response body reader: %w", err)
 	}
 
 	// [6]: Read the HTTP response body from the peer
 	// Pipe the HTTP response body right from the remote Proxy to the client
 	if _, err := io.Copy(w, responseBodyReader); err != nil {
 		close(responseBodyChannel)
-		return fmt.Errorf("unable to pipe response body : %w", err)
+		return fmt.Errorf("unable to pipe response body: %w", err)
 	}
 
 	// Notify read() that we are done reading the response body
@@ -268,7 +268,7 @@ func (connection *Connection) Close() {
 	connection.close()
 }
 
-// Close the connection ( without lock )
+// Close the connection (without lock)
 func (connection *Connection) close() {
 	if connection.status == Closed {
 		return

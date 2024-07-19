@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-// HTTPResponse is a serializable version of http.Response ( with only useful fields )
+// HTTPResponse is a serializable version of http.Response
 type HTTPResponse struct {
 	StatusCode    int
 	Header        http.Header

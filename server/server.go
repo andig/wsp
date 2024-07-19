@@ -48,10 +48,8 @@ type ConnectionRequest struct {
 }
 
 // NewConnectionRequest creates a new connection request
-func NewConnectionRequest(timeout time.Duration) (cr *ConnectionRequest) {
-	cr = new(ConnectionRequest)
-	cr.connection = make(chan *Connection)
-	return
+func NewConnectionRequest(timeout time.Duration) *ConnectionRequest {
+	return &ConnectionRequest{make(chan *Connection)}
 }
 
 // NewServer return a new Server instance
