@@ -57,31 +57,28 @@ func (pool *Pool) Offer(connection *Connection) {
 	pool.idle <- connection
 }
 
-// Clean removes dead connection from the pool
+// clean removes dead connection from the pool
 // Look for dead connection in the pool
 // This MUST be surrounded by pool.lock.Lock()
-func (pool *Pool) Clean() {
+func (pool *Pool) clean() {
 	idle := 0
-	var connections []*Connection
+	connections := make([]*Connection, 0, len(pool.connections))
 
 	for _, connection := range pool.connections {
-		// We need to be sur we'll never close a BUSY or soon to be BUSY connection
+		// We need to be sure we'll never close a BUSY or soon to be BUSY connection
 		connection.lock.Lock()
 		if connection.status == Idle {
 			idle++
-			if idle > pool.size {
-				// We have enough idle connections in the pool.
-				// Terminate the connection if it is idle since more that IdleTimeout
-				if time.Since(connection.idleSince) > pool.server.Config.IdleTimeout {
-					connection.close()
-				}
+			// We have enough idle connections in the pool.
+			// Terminate the connection if it is idle since more that IdleTimeout
+			if idle > pool.size && time.Since(connection.idleSince) > pool.server.Config.IdleTimeout {
+				connection.close()
 			}
 		}
-		connection.lock.Unlock()
-		if connection.status == Closed {
-			continue
+		if connection.status != Closed {
+			connections = append(connections, connection)
 		}
-		connections = append(connections, connection)
+		connection.lock.Unlock()
 	}
 	pool.connections = connections
 }
@@ -91,7 +88,7 @@ func (pool *Pool) IsEmpty() bool {
 	pool.lock.Lock()
 	defer pool.lock.Unlock()
 
-	pool.Clean()
+	pool.clean()
 	return len(pool.connections) == 0
 }
 
@@ -101,11 +98,11 @@ func (pool *Pool) Shutdown() {
 	defer pool.lock.Unlock()
 
 	pool.done = true
-
 	for _, connection := range pool.connections {
 		connection.Close()
 	}
-	pool.Clean()
+
+	pool.clean()
 }
 
 // PoolSize is the number of connection in each state in the pool
@@ -116,12 +113,13 @@ type PoolSize struct {
 }
 
 // Size return the number of connection in each state in the pool
-func (pool *Pool) Size() (ps *PoolSize) {
+func (pool *Pool) Size() *PoolSize {
 	pool.lock.RLock()
 	defer pool.lock.RUnlock()
 
-	ps = new(PoolSize)
+	ps := new(PoolSize)
 	for _, connection := range pool.connections {
+		connection.lock.Lock()
 		switch connection.status {
 		case Idle:
 			ps.Idle++
@@ -130,7 +128,8 @@ func (pool *Pool) Size() (ps *PoolSize) {
 		case Closed:
 			ps.Closed++
 		}
+		connection.lock.Unlock()
 	}
 
-	return
+	return ps
 }
