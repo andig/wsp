@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,7 +21,7 @@ type Server struct {
 	Config *Config
 
 	// In pools, keep connections with WebSocket peers.
-	pools []*Pool
+	pools map[PoolID]*Pool
 
 	// A RWMutex is a reader/writer mutual exclusion lock,
 	// and it is for exclusive control with pools operation.
@@ -44,18 +43,15 @@ type Server struct {
 
 // ConnectionRequest is used to request a proxy connection from the dispatcher
 type ConnectionRequest struct {
+	id         PoolID
 	connection chan *Connection
-}
-
-// NewConnectionRequest creates a new connection request
-func NewConnectionRequest(timeout time.Duration) *ConnectionRequest {
-	return &ConnectionRequest{make(chan *Connection)}
 }
 
 // NewServer return a new Server instance
 func NewServer(config *Config) *Server {
 	server := &Server{
 		Config:     config,
+		pools:      make(map[PoolID]*Pool),
 		done:       make(chan struct{}),
 		dispatcher: make(chan *ConnectionRequest),
 	}
@@ -101,20 +97,15 @@ func (s *Server) clean() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if len(s.pools) == 0 {
-		return
-	}
-
 	idle := 0
 	busy := 0
 
-	var pools []*Pool
-	for _, pool := range s.pools {
+	for id, pool := range s.pools {
 		if pool.IsEmpty() {
-			log.Printf("Removing empty connection pool : %s", pool.id)
+			log.Printf("Removing empty connection pool: %s", id)
 			pool.Shutdown()
-		} else {
-			pools = append(pools, pool)
+			delete(s.pools, id)
+			continue
 		}
 
 		ps := pool.Size()
@@ -122,9 +113,14 @@ func (s *Server) clean() {
 		busy += ps.Busy
 	}
 
-	log.Printf("%d pools, %d idle, %d busy", len(pools), idle, busy)
+	log.Printf("%d pools, %d idle, %d busy", len(s.pools), idle, busy)
+}
 
-	s.pools = pools
+func (s *Server) getPool(id PoolID) (*Pool, bool) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	pool, ok := s.pools[id]
+	return pool, ok
 }
 
 // Dispatch connection from available pools to clients requests
@@ -151,41 +147,28 @@ func (s *Server) dispatchConnections() {
 			default: // Go through
 			}
 
-			s.lock.RLock()
-			if len(s.pools) == 0 {
+			pool, ok := s.getPool(request.id)
+			if !ok {
 				// No connection pool available
-				s.lock.RUnlock()
 				break
 			}
 
-			// [1]: Select a pool which has an idle connection
-			// Build a select statement dynamically to handle an arbitrary number of pools.
-			cases := make([]reflect.SelectCase, len(s.pools)+1)
-			for i, ch := range s.pools {
-				cases[i] = reflect.SelectCase{
-					Dir:  reflect.SelectRecv,
-					Chan: reflect.ValueOf(ch.idle),
-				}
-			}
-			cases[len(cases)-1] = reflect.SelectCase{
-				Dir: reflect.SelectDefault,
-			}
-			s.lock.RUnlock()
-
-			_, value, ok := reflect.Select(cases)
-			if !ok {
-				continue // a pool has been removed, try again
-			}
-			connection, _ := value.Interface().(*Connection)
-
 			// [2]: Verify that we can use this connection and take it.
-			if connection.Take() {
+			if connection := <-pool.idle; connection.Take() {
 				request.connection <- connection
 				break
 			}
 		}
 
 		close(request.connection)
+	}
+}
+
+// newRequest creates a new connection request
+func newRequest(poolId PoolID) *ConnectionRequest {
+	return &ConnectionRequest{
+		id:         poolId,
+		connection: make(chan *Connection),
 	}
 }
 
@@ -197,6 +180,11 @@ func (s *Server) Request(w http.ResponseWriter, r *http.Request) {
 		wsp.ProxyErrorf(w, "Missing X-PROXY-DESTINATION header")
 		return
 	}
+	poolId := PoolID(r.Header.Get("X-PROXY-CLIENT"))
+	if poolId == "" {
+		wsp.ProxyErrorf(w, "Missing X-PROXY-CLIENT header")
+		return
+	}
 	URL, err := url.Parse(dstURL)
 	if err != nil {
 		wsp.ProxyErrorf(w, "Unable to parse X-PROXY-DESTINATION header")
@@ -206,13 +194,13 @@ func (s *Server) Request(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("%s %s", r.Method, r.URL.String())
 
-	if len(s.pools) == 0 {
+	if _, ok := s.getPool(poolId); !ok {
 		wsp.ProxyErrorf(w, "No proxy available")
 		return
 	}
 
 	// [2]: Take an WebSocket connection available from pools for relaying received requests.
-	request := NewConnectionRequest(s.Config.Timeout)
+	request := newRequest(poolId)
 	// "Dispatcher" is running in a separate thread from the server by `go s.dispatchConnections()`.
 	// It waits to receive requests to dispatch connection from available pools to clients requests.
 	// https://github.com/hgsgtk/wsp/blob/ea4902a8e11f820268e52a6245092728efeffd7f/server/server.go#L93
@@ -252,7 +240,7 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 
 	ws, err := websocket.Accept(w, r, acceptOptions)
 	if err != nil {
-		wsp.ProxyErrorf(w, "HTTP upgrade error : %v", err)
+		wsp.ProxyErrorf(w, "HTTP upgrade error: %v", err)
 		return
 	}
 	ws.SetReadLimit(-1)
@@ -261,7 +249,7 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 	// The first message should contains the remote Proxy name and size
 	_, greeting, err := ws.Read(context.Background())
 	if err != nil {
-		wsp.ProxyErrorf(w, "Unable to read greeting message : %s", err)
+		wsp.ProxyErrorf(w, "Unable to read greeting message: %s", err)
 		ws.CloseNow()
 		return
 	}
@@ -271,7 +259,7 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 	id := PoolID(split[0])
 	size, err := strconv.Atoi(split[1])
 	if err != nil {
-		wsp.ProxyErrorf(w, "Unable to parse greeting message : %s", err)
+		wsp.ProxyErrorf(w, "Unable to parse greeting message: %s", err)
 		ws.CloseNow()
 		return
 	}
@@ -281,18 +269,10 @@ func (s *Server) Register(w http.ResponseWriter, r *http.Request) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	var pool *Pool
-	// There is no need to create a new pool,
-	// if it is already registered in current pools.
-	for _, p := range s.pools {
-		if p.id == id {
-			pool = p
-			break
-		}
-	}
-	if pool == nil {
+	pool, ok := s.pools[id]
+	if !ok {
 		pool = NewPool(s, id)
-		s.pools = append(s.pools, pool)
+		s.pools[id] = pool
 	}
 	// update pool size
 	pool.size = size
