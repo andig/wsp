@@ -206,7 +206,11 @@ func (s *Server) Request(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("%s %s", r.Method, r.URL.String())
 
-	if len(s.pools) == 0 {
+	s.lock.RLock()
+	pools := len(s.pools)
+	s.lock.RUnlock()
+
+	if pools == 0 {
 		wsp.ProxyErrorf(w, "No proxy available")
 		return
 	}
@@ -309,8 +313,12 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) Shutdown() {
 	close(s.done)
 	close(s.dispatcher)
+
+	s.lock.RLock()
 	for _, pool := range s.pools {
 		pool.Shutdown()
 	}
+	s.lock.RUnlock()
+
 	s.clean()
 }
