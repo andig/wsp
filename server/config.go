@@ -23,18 +23,17 @@ func NewConfig() *Config {
 }
 
 // LoadConfiguration loads configuration from a YAML file
-func LoadConfiguration(path string) (config *Config, err error) {
-	config = NewConfig()
+func LoadConfiguration(path string) (*Config, error) {
+	config := NewConfig()
 
 	bytes, err := os.ReadFile(path)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	err = yaml.Unmarshal(bytes, config)
-	if err != nil {
-		return
+	if err := yaml.Unmarshal(bytes, config); err != nil {
+		return nil, err
 	}
 
-	return
+	return config, nil
 }

@@ -15,12 +15,13 @@ type Client struct {
 }
 
 // NewClient creates a new Client.
-func NewClient(config *Config) (c *Client) {
-	c = new(Client)
-	c.Config = config
-	c.client = &http.Client{}
-	c.pools = make(map[string]*Pool)
-	return
+func NewClient(config *Config) *Client {
+	c := &Client{
+		Config: config,
+		client: &http.Client{},
+		pools:  make(map[string]*Pool),
+	}
+	return c
 }
 
 // Start the Proxy

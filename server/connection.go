@@ -233,11 +233,7 @@ func (connection *Connection) Take() bool {
 	connection.lock.Lock()
 	defer connection.lock.Unlock()
 
-	if connection.status == Closed {
-		return false
-	}
-
-	if connection.status == Busy {
+	if connection.status == Closed || connection.status == Busy {
 		return false
 	}
 
